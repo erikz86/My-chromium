@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # ============================================================
@@ -5,6 +6,7 @@
 #   OS      : Ubuntu 20.04 / 22.04 / 24.04
 #   Akses   : HTTP :3010 & HTTPS :3011
 #   Auth    : Username & Password random
+#   Mode    : Chromium Standard + Optimasi RAM
 # ============================================================
 
 set -e
@@ -28,7 +30,7 @@ echo ""
 
 # ─── Cek root ───────────────────────────────────────────────
 if [ "$EUID" -ne 0 ]; then
-  error "Jalankan script ini sebagai root: sudo bash install_chromium.sh"
+  error "Jalankan script ini sebagai root: sudo bash my_chromium.sh"
 fi
 
 # ─── Cek OS ─────────────────────────────────────────────────
@@ -67,13 +69,11 @@ if ! command -v docker &>/dev/null; then
   done
   apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release > /dev/null 2>&1
 
-  # Tambah GPG key Docker (metode baru, support semua versi Ubuntu)
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
     gpg --dearmor -o /etc/apt/keyrings/docker.gpg > /dev/null 2>&1
   chmod a+r /etc/apt/keyrings/docker.gpg
 
-  # Tambah repo Docker
   echo \
     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
     https://download.docker.com/linux/ubuntu \
@@ -91,7 +91,6 @@ fi
 
 # ─── Install Docker Compose ─────────────────────────────────
 if ! command -v docker-compose &>/dev/null; then
-  # Cek dulu apakah docker compose plugin sudah ada (Ubuntu 22/24)
   if docker compose version &>/dev/null 2>&1; then
     ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose 2>/dev/null || \
     ln -sf $(which docker) /usr/local/bin/docker-compose 2>/dev/null || true
@@ -143,15 +142,21 @@ services:
       - PGID=1000
       - TZ=${TIMEZONE}
       - LANG=en_US.UTF-8
-      - CHROME_CLI=https://google.com/
-      - DISPLAY_WIDTH=1280
-      - DISPLAY_HEIGHT=720
+      - CHROME_CLI=--disable-dev-shm-usage --disable-gpu-sandbox --no-sandbox --disable-background-networking --disable-default-apps --memory-pressure-off --disable-hang-monitor --disable-prompt-on-repost --disable-sync --disable-translate --metrics-recording-only --safebrowsing-disable-auto-update https://google.com/
+      - DISPLAY_WIDTH=1024
+      - DISPLAY_HEIGHT=600
+      - SELKIES_ENCODER=jpeg
+      - SELKIES_VIDEO_BITRATE=2
+      - SELKIES_FRAMERATE=24
+      - SELKIES_JPEG_QUALITY=60
     volumes:
       - /root/chromium/config:/config
     ports:
       - 3010:3000
       - 3011:3001
-    shm_size: "1gb"
+    shm_size: "512mb"
+    mem_limit: 800m
+    memswap_limit: 1800m
     restart: unless-stopped
 EOF
 
@@ -163,8 +168,8 @@ ufw allow 3010/tcp > /dev/null 2>&1 || true
 ufw allow 3011/tcp > /dev/null 2>&1 || true
 log "Port 3010 & 3011 dibuka"
 
-# ─── Pull image dulu ────────────────────────────────────────
-info "Pull image Chromium (mungkin butuh beberapa menit)..."
+# ─── Pull image ─────────────────────────────────────────────
+info "Pull image Chromium Standard (mungkin butuh beberapa menit)..."
 docker pull lscr.io/linuxserver/chromium:latest
 log "Image berhasil di-pull"
 
@@ -174,13 +179,13 @@ cd $HOME/chromium
 docker-compose up -d
 log "Container Chromium berjalan"
 
-# ─── Simpan kredensial ke file ──────────────────────────────
+# ─── Simpan kredensial ──────────────────────────────────────
 IPVPS=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "IP_VPS_KAMU")
 CRED_FILE="$HOME/chromium_credentials.txt"
 
 cat > $CRED_FILE <<EOF
 ============================================================
-  CHROMIUM DOCKER - INFORMASI AKSES
+  CHROMIUM STANDARD + OPTIMASI RAM - INFORMASI AKSES
 ============================================================
   IP VPS     : ${IPVPS}
   HTTP       : http://${IPVPS}:3010
@@ -190,6 +195,7 @@ cat > $CRED_FILE <<EOF
   Password   : ${PASSWORD}
 
   Timezone   : ${TIMEZONE}
+  Mode       : Chromium Standard + Optimasi RAM
   Install    : $(date '+%Y-%m-%d %H:%M:%S')
 ============================================================
 CATATAN:
@@ -197,18 +203,20 @@ CATATAN:
   "Advanced" lalu "Proceed anyway" / "Lanjutkan"
 - Tunggu 30-60 detik setelah pertama akses agar
   tampilan muncul (software renderer)
+- RAM limit: 800MB | Swap: 1800MB
+- Ekstensi: Install normal dari Chrome Web Store
 ============================================================
 EOF
 
 chmod 600 $CRED_FILE
 
-# ─── Bersihkan image tidak terpakai ─────────────────────────
+# ─── Bersihkan cache Docker ──────────────────────────────────
 docker system prune -f > /dev/null 2>&1
 
 # ─── Tampilkan hasil ─────────────────────────────────────────
 echo ""
 echo -e "${CYAN}============================================================${NC}"
-echo -e "${GREEN}         INSTALASI SELESAI! INFORMASI AKSES:              ${NC}"
+echo -e "${GREEN}      INSTALASI SELESAI! INFORMASI AKSES:                 ${NC}"
 echo -e "${CYAN}============================================================${NC}"
 echo -e "  ${YELLOW}HTTP  ${NC}: http://${IPVPS}:3010"
 echo -e "  ${YELLOW}HTTPS ${NC}: https://${IPVPS}:3011"
@@ -216,6 +224,9 @@ echo ""
 echo -e "  ${YELLOW}Username${NC}: ${CUSTOM_USER}"
 echo -e "  ${YELLOW}Password${NC}: ${PASSWORD}"
 echo ""
+echo -e "  ${CYAN}Mode    ${NC}: Chromium Standard + Optimasi RAM"
+echo -e "  ${CYAN}RAM     ${NC}: Limit 800MB + Swap 1800MB"
+echo -e "  ${CYAN}Ekstensi${NC}: Install dari Chrome Web Store (normal)"
 echo -e "  ${CYAN}Kredensial tersimpan di:${NC} ~/chromium_credentials.txt"
 echo -e "${CYAN}============================================================${NC}"
 echo ""
